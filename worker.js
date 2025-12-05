@@ -3,7 +3,6 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-
     const WOO_URL = env.WOO_URL;
     const CK = env.WOO_CK;
     const CS = env.WOO_CS;
@@ -14,28 +13,22 @@ export default {
       return `${WOO_URL}/wp-json/wc/v3/${endpoint}${hasQuery ? "&" : "?"}${auth}`;
     }
 
-
     async function wc(endpoint) {
       const apiUrl = buildWooURL(endpoint);
       const res = await fetch(apiUrl);
-      if (!res.ok) {
-        return { error: true, status: res.status, message: await res.text() };
-      }
+      if (!res.ok) return { error: true, status: res.status, message: await res.text() };
       return res.json();
     }
-
 
     if (path === "/products") {
       const data = await wc("products?per_page=100");
       return Response.json(data);
     }
 
-
     if (path === "/orders") {
       const data = await wc("orders?per_page=100&status=any");
       return Response.json(data);
     }
-
 
     if (path.startsWith("/orders/")) {
       const id = path.split("/")[2];
@@ -43,25 +36,23 @@ export default {
       return Response.json(data);
     }
 
-
     if (path === "/customers") {
       const orders = await wc("orders?per_page=100&status=any");
-
       const customers = {};
 
       (orders || []).forEach((order) => {
-        const billing = order.billing || {};
-        const key = billing.phone || billing.email;
+        const b = order.billing || {};
+        const key = b.phone || b.email;
         if (!key) return;
 
         if (!customers[key]) {
           customers[key] = {
             id: key,
-            name: `${billing.first_name || ""} ${billing.last_name || ""}`.trim(),
-            email: billing.email || "",
-            phone: billing.phone || "",
-            city: billing.city || "",
-            state: billing.state || "",
+            name: `${b.first_name || ""} ${b.last_name || ""}`.trim(),
+            email: b.email || "",
+            phone: b.phone || "",
+            city: b.city || "",
+            state: b.state || "",
             totalOrders: 1,
             totalSpent: Number(order.total) || 0,
             lastOrderDate: order.date_created || null,
@@ -81,7 +72,6 @@ export default {
 
     if (path.startsWith("/customers/orders/")) {
       const id = decodeURIComponent(path.split("/")[3]).toLowerCase();
-
       const orders = await wc("orders?per_page=100&status=any");
 
       const filtered = (orders || []).filter((o) => {
@@ -93,7 +83,36 @@ export default {
       return Response.json(filtered);
     }
 
-   
+    if (path === "/send-notification" && request.method === "POST") {
+      const body = await request.json();
+      const token = body.expoPushToken;
+      const title = body.title || "Notification";
+      const message = body.body || "";
+      const extra = body.data || {};
+
+      if (!token) {
+        return Response.json({ error: "expoPushToken is required" }, { status: 400 });
+      }
+
+      const payload = {
+        to: token,
+        sound: "default",
+        title,
+        body: message,
+        data: extra,
+      };
+
+      const result = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      return Response.json(await result.json());
+    }
 
     return new Response("Woo Admin Backend Worker Running", { status: 200 });
   },
