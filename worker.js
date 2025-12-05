@@ -17,14 +17,19 @@ export default {
     async function wc(endpoint) {
       const apiUrl = buildWooURL(endpoint);
       const res = await fetch(apiUrl);
-      if (!res.ok) return { error: true, status: res.status, message: await res.text() };
+      if (!res.ok) {
+        return { error: true, status: res.status, message: await res.text() };
+      }
       return res.json();
     }
 
     if (path === "/save-token" && method === "POST") {
       const body = await request.json();
       const token = body.expoPushToken;
-      if (!token) return Response.json({ error: "expoPushToken is required" }, { status: 400 });
+
+      if (!token) {
+        return Response.json({ error: "expoPushToken is required" }, { status: 400 });
+      }
 
       await env.TOKENS.put(token, "1");
       return Response.json({ success: true });
