@@ -1,4 +1,4 @@
-name = "woo-admin-backend"
+name = "woocomerce-admin-backend"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
