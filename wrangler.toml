@@ -1,0 +1,8 @@
+name = "woo-admin-backend"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+WOO_URL = "https://socloth.in/"
+WOO_CK = "ck_92203ce79bbb4e6713a0c8ba4491cdcd20ce3e83"
+WOO_CS = "cs_af346877fb6f478d291d59087c6b44464ab8cfb0"
