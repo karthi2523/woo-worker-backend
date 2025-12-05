@@ -127,24 +127,29 @@ export default {
     }
 
     if (path === "/test-notification") {
-  const keys = await env.TOKENS.list();
-  const tokens = keys.keys.map(k => k.name);
+  try {
+    const keys = await env.TOKENS.list();
+    const tokens = keys.keys.map(k => k.name);
 
-  for (const token of tokens) {
-    await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: token,
-        sound: "default",
-        title: "Test Notification",
-        body: "Your Woo Admin backend is working!"
-      })
-    });
+    for (const token of tokens) {
+      await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: token,
+          sound: "default",
+          title: "Test Notification",
+          body: "Worker test message"
+        })
+      });
+    }
+
+    return Response.json({ ok: true, sent: tokens.length });
+  } catch (err) {
+    return Response.json({ error: err.toString() }, { status: 500 });
   }
-
-  return Response.json({ success: true, sent: tokens.length });
 }
+
 
 
     return new Response("Woo Admin Backend Worker Running", { status: 200 });
