@@ -2,6 +2,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
+    const method = request.method;
 
     const WOO_URL = env.WOO_URL;
     const CK = env.WOO_CK;
@@ -18,6 +19,43 @@ export default {
       const res = await fetch(apiUrl);
       if (!res.ok) return { error: true, status: res.status, message: await res.text() };
       return res.json();
+    }
+
+    if (path === "/save-token" && method === "POST") {
+      const body = await request.json();
+      const token = body.expoPushToken;
+      if (!token) return Response.json({ error: "expoPushToken is required" }, { status: 400 });
+
+      await env.TOKENS.put(token, "1");
+      return Response.json({ success: true });
+    }
+
+    if (path === "/order-created" && method === "POST") {
+      const order = await request.json();
+      const first = order?.billing?.first_name || "Customer";
+      const total = order?.total || "0";
+      const orderId = order?.id || "";
+
+      const keys = await env.TOKENS.list();
+      const tokens = keys.keys.map(k => k.name);
+
+      for (const token of tokens) {
+        const payload = {
+          to: token,
+          sound: "default",
+          title: `New Order #${orderId}`,
+          body: `Amount ₹${total} from ${first}`,
+          data: { orderId }
+        };
+
+        await fetch("https://exp.host/--/api/v2/push/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      return Response.json({ success: true });
     }
 
     if (path === "/products") {
@@ -55,7 +93,7 @@ export default {
             state: b.state || "",
             totalOrders: 1,
             totalSpent: Number(order.total) || 0,
-            lastOrderDate: order.date_created || null,
+            lastOrderDate: order.date_created || null
           };
         } else {
           customers[key].totalOrders++;
@@ -83,37 +121,6 @@ export default {
       return Response.json(filtered);
     }
 
-    if (path === "/send-notification" && request.method === "POST") {
-      const body = await request.json();
-      const token = body.expoPushToken;
-      const title = body.title || "Notification";
-      const message = body.body || "";
-      const extra = body.data || {};
-
-      if (!token) {
-        return Response.json({ error: "expoPushToken is required" }, { status: 400 });
-      }
-
-      const payload = {
-        to: token,
-        sound: "default",
-        title,
-        body: message,
-        data: extra,
-      };
-
-      const result = await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      return Response.json(await result.json());
-    }
-
     return new Response("Woo Admin Backend Worker Running", { status: 200 });
-  },
+  }
 };
