@@ -14,7 +14,7 @@ export default {
       return `${WOO_URL}/wp-json/wc/v3/${endpoint}${hasQuery ? "&" : "?"}${auth}`;
     }
 
-    async function wc(endpoint) {
+    async function wcGet(endpoint) {
       const apiUrl = buildWooURL(endpoint);
       const res = await fetch(apiUrl);
       if (!res.ok) {
@@ -22,6 +22,23 @@ export default {
       }
       return res.json();
     }
+
+    async function wcUpdate(endpoint, body) {
+      const apiUrl = buildWooURL(endpoint);
+      const res = await fetch(apiUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { error: true, status: res.status, message: text };
+      }
+    }
+
 
     if (path === "/save-token" && method === "POST") {
       const body = await request.json();
@@ -42,7 +59,7 @@ export default {
       const orderId = order?.id || "";
 
       const keys = await env.TOKENS.list();
-      const tokens = keys.keys.map(k => k.name);
+      const tokens = keys.keys.map((k) => k.name);
 
       for (const token of tokens) {
         const payload = {
@@ -50,37 +67,48 @@ export default {
           sound: "default",
           title: `New Order #${orderId}`,
           body: `Amount ₹${total} from ${first}`,
-          data: { orderId }
+          data: { orderId },
         };
 
         await fetch("https://exp.host/--/api/v2/push/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
       }
 
       return Response.json({ success: true });
     }
 
-    if (path === "/products") {
-      const data = await wc("products?per_page=100");
+
+    if (path === "/products" && method === "GET") {
+      const data = await wcGet("products?per_page=100");
       return Response.json(data);
     }
 
-    if (path === "/orders") {
-      const data = await wc("orders?per_page=100&status=any");
-      return Response.json(data);
-    }
 
-    if (path.startsWith("/orders/")) {
+    if (path.startsWith("/products/") && method === "PUT") {
       const id = path.split("/")[2];
-      const data = await wc(`orders/${id}`);
+      const body = await request.json();
+
+      const updated = await wcUpdate(`products/${id}`, body);
+      return Response.json(updated);
+    }
+
+    if (path === "/orders" && method === "GET") {
+      const data = await wcGet("orders?per_page=100&status=any");
       return Response.json(data);
     }
+
+    if (path.startsWith("/orders/") && method === "GET") {
+      const id = path.split("/")[2];
+      const data = await wcGet(`orders/${id}`);
+      return Response.json(data);
+    }
+
 
     if (path === "/customers") {
-      const orders = await wc("orders?per_page=100&status=any");
+      const orders = await wcGet("orders?per_page=100&status=any");
       const customers = {};
 
       (orders || []).forEach((order) => {
@@ -98,7 +126,7 @@ export default {
             state: b.state || "",
             totalOrders: 1,
             totalSpent: Number(order.total) || 0,
-            lastOrderDate: order.date_created || null
+            lastOrderDate: order.date_created || null,
           };
         } else {
           customers[key].totalOrders++;
@@ -115,7 +143,7 @@ export default {
 
     if (path.startsWith("/customers/orders/")) {
       const id = decodeURIComponent(path.split("/")[3]).toLowerCase();
-      const orders = await wc("orders?per_page=100&status=any");
+      const orders = await wcGet("orders?per_page=100&status=any");
 
       const filtered = (orders || []).filter((o) => {
         const email = (o.billing.email || "").trim().toLowerCase();
@@ -126,32 +154,32 @@ export default {
       return Response.json(filtered);
     }
 
+
     if (path === "/test-notification") {
-  try {
-    const keys = await env.TOKENS.list();
-    const tokens = keys.keys.map(k => k.name);
+      try {
+        const keys = await env.TOKENS.list();
+        const tokens = keys.keys.map((k) => k.name);
 
-    for (const token of tokens) {
-      await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: token,
-          sound: "default",
-          title: "Test Notification",
-          body: "Worker test message"
-        })
-      });
+        for (const token of tokens) {
+          await fetch("https://exp.host/--/api/v2/push/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: token,
+              sound: "default",
+              title: "Test Notification",
+              body: "Worker test message",
+            }),
+          });
+        }
+
+        return Response.json({ ok: true, sent: tokens.length });
+      } catch (err) {
+        return Response.json({ error: err.toString() }, { status: 500 });
+      }
     }
-
-    return Response.json({ ok: true, sent: tokens.length });
-  } catch (err) {
-    return Response.json({ error: err.toString() }, { status: 500 });
-  }
-}
-
 
 
     return new Response("Woo Admin Backend Worker Running", { status: 200 });
-  }
+  },
 };
