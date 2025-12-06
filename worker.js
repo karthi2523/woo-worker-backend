@@ -7,7 +7,7 @@ export default {
     const WOO_URL = env.WOO_URL;
     const CK = env.WOO_CK;
     const CS = env.WOO_CS;
-    
+
     function buildWooURL(endpoint) {
       const hasQuery = endpoint.includes("?");
       const auth = `consumer_key=${CK}&consumer_secret=${CS}`;
@@ -225,6 +225,61 @@ export default {
 
       return Response.json(filtered);
     }
+
+        if (path === "/test-notification" && method === "GET") {
+      try {
+        // Load tokens from KV
+        const keys = await env.TOKENS.list();
+        const tokens = keys.keys.map(k => k.name);
+
+        if (tokens.length === 0) {
+          return Response.json({ error: "No tokens stored" }, { status: 404 });
+        }
+
+        // Generate access token for FCM
+        const accessToken = await getAccessToken(env);
+
+        let successCount = 0;
+
+        for (const token of tokens) {
+          const message = {
+            message: {
+              token,
+              notification: {
+                title: "Test Notification",
+                body: "Your FCM setup is working! 🎉",
+              },
+              data: {
+                type: "test",
+              },
+            },
+          };
+
+          const response = await fetch(
+            `https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(message),
+            }
+          );
+
+          if (response.ok) successCount++;
+        }
+
+        return Response.json({
+          success: true,
+          sent: successCount,
+          total: tokens.length,
+        });
+      } catch (err) {
+        return Response.json({ error: err.toString() }, { status: 500 });
+      }
+    }
+
 
 
     return new Response("Woo Admin Backend Worker Running", { status: 200 });
