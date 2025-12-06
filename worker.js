@@ -60,13 +60,32 @@ export default {
       const unsigned = `${base64url(header)}.${base64url(payload)}`;
       const privateKey = env.FCM_PRIVATE_KEY.replace(/\\n/g, "\n");
 
-      const key = await crypto.subtle.importKey(
-        "pkcs8",
-        new TextEncoder().encode(privateKey),
-        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-        false,
-        ["sign"]
-      );
+      // Convert PEM → binary (ArrayBuffer)
+function pemToBinary(pem) {
+  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, "")
+                 .replace(/-----END PRIVATE KEY-----/, "")
+                 .replace(/\s+/g, "");
+  const raw = atob(b64);
+  const buffer = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) {
+    buffer[i] = raw.charCodeAt(i);
+  }
+  return buffer.buffer;
+}
+
+const binaryKey = pemToBinary(privateKey);
+
+const key = await crypto.subtle.importKey(
+  "pkcs8",
+  binaryKey,
+  {
+    name: "RSASSA-PKCS1-v1_5",
+    hash: "SHA-256"
+  },
+  false,
+  ["sign"]
+);
+
 
       const signatureBuffer = await crypto.subtle.sign(
         "RSASSA-PKCS1-v1_5",
