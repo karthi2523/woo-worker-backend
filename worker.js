@@ -7,7 +7,7 @@ export default {
     const WOO_URL = env.WOO_URL;
     const CK = env.WOO_CK;
     const CS = env.WOO_CS;
-
+    
     function buildWooURL(endpoint) {
       const hasQuery = endpoint.includes("?");
       const auth = `consumer_key=${CK}&consumer_secret=${CS}`;
@@ -40,15 +40,73 @@ export default {
     }
 
 
-    if (path === "/save-token" && method === "POST") {
-      const body = await request.json();
-      const token = body.expoPushToken;
+    async function getAccessToken(env) {
+      const header = { alg: "RS256", typ: "JWT" };
+      const now = Math.floor(Date.now() / 1000);
+      const payload = {
+        iss: env.FCM_CLIENT_EMAIL,
+        scope: "https://www.googleapis.com/auth/firebase.messaging",
+        aud: "https://oauth2.googleapis.com/token",
+        iat: now,
+        exp: now + 3600,
+      };
 
-      if (!token) {
-        return Response.json({ error: "expoPushToken is required" }, { status: 400 });
+      const base64url = (obj) =>
+        btoa(JSON.stringify(obj))
+          .replace(/=/g, "")
+          .replace(/\+/g, "-")
+          .replace(/\//g, "_");
+
+      const unsigned = `${base64url(header)}.${base64url(payload)}`;
+      const privateKey = env.FCM_PRIVATE_KEY.replace(/\\n/g, "\n");
+
+      const key = await crypto.subtle.importKey(
+        "pkcs8",
+        new TextEncoder().encode(privateKey),
+        { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+        false,
+        ["sign"]
+      );
+
+      const signatureBuffer = await crypto.subtle.sign(
+        "RSASSA-PKCS1-v1_5",
+        key,
+        new TextEncoder().encode(unsigned)
+      );
+
+      const signature = btoa(
+        String.fromCharCode(...new Uint8Array(signatureBuffer))
+      )
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+
+      const jwt = `${unsigned}.${signature}`;
+
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body:
+          "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=" +
+          jwt,
+      });
+
+      const json = await tokenRes.json();
+      return json.access_token;
+    }
+
+
+    if (path === "/save-token" && method === "POST") {
+      const { fcmToken } = await request.json();
+
+      if (!fcmToken) {
+        return Response.json(
+          { error: "fcmToken is required" },
+          { status: 400 }
+        );
       }
 
-      await env.TOKENS.put(token, "1");
+      await env.TOKENS.put(fcmToken, "1");
       return Response.json({ success: true });
     }
 
@@ -56,44 +114,59 @@ export default {
       const order = await request.json();
       const first = order?.billing?.first_name || "Customer";
       const total = order?.total || "0";
-      const orderId = order?.id || "";
+      const orderId = order?.id?.toString() || "";
 
       const keys = await env.TOKENS.list();
       const tokens = keys.keys.map((k) => k.name);
 
-      for (const token of tokens) {
-        const payload = {
-          to: token,
-          sound: "default",
-          title: `New Order #${orderId}`,
-          body: `Amount ₹${total} from ${first}`,
-          data: { orderId },
-        };
-
-        await fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+      if (tokens.length === 0) {
+        return Response.json({ success: true, sent: 0 });
       }
 
-      return Response.json({ success: true });
-    }
+      const accessToken = await getAccessToken(env);
 
+      for (const token of tokens) {
+        const message = {
+          message: {
+            token,
+            notification: {
+              title: `New Order #${orderId}`,
+              body: `₹${total} from ${first}`,
+            },
+            data: {
+              orderId,
+            },
+          },
+        };
+
+        await fetch(
+          `https://fcm.googleapis.com/v1/projects/${env.FCM_PROJECT_ID}/messages:send`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(message),
+          }
+        );
+      }
+
+      return Response.json({ success: true, sent: tokens.length });
+    }
 
     if (path === "/products" && method === "GET") {
       const data = await wcGet("products?per_page=100");
       return Response.json(data);
     }
 
-
     if (path.startsWith("/products/") && method === "PUT") {
       const id = path.split("/")[2];
       const body = await request.json();
-
       const updated = await wcUpdate(`products/${id}`, body);
       return Response.json(updated);
     }
+
 
     if (path === "/orders" && method === "GET") {
       const data = await wcGet("orders?per_page=100&status=any");
@@ -105,7 +178,6 @@ export default {
       const data = await wcGet(`orders/${id}`);
       return Response.json(data);
     }
-
 
     if (path === "/customers") {
       const orders = await wcGet("orders?per_page=100&status=any");
@@ -152,31 +224,6 @@ export default {
       });
 
       return Response.json(filtered);
-    }
-
-
-    if (path === "/test-notification") {
-      try {
-        const keys = await env.TOKENS.list();
-        const tokens = keys.keys.map((k) => k.name);
-
-        for (const token of tokens) {
-          await fetch("https://exp.host/--/api/v2/push/send", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: token,
-              sound: "default",
-              title: "Test Notification",
-              body: "Worker test message",
-            }),
-          });
-        }
-
-        return Response.json({ ok: true, sent: tokens.length });
-      } catch (err) {
-        return Response.json({ error: err.toString() }, { status: 500 });
-      }
     }
 
 
