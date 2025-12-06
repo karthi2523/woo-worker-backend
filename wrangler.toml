@@ -16,4 +16,4 @@ FCM_PRIVATE_KEY = """-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAA
 
 [[kv_namespaces]]
 binding = "TOKENS"
-id = "woo-push-tokens"
+id = "217fa154a36443c4b9c34d61c72c1c44"
